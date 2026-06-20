@@ -82,9 +82,11 @@ function AppRoutes() {
           <Route path="daily-instructions/new" element={<DailyInstruction.DailyInstructionFormPage />} />
 
           {/* Module A - Pre Production */}
+          <Route path="pre-production" element={<ModuleA.PreProductionPage />} />
           <Route path="pre-production/:sessionId" element={<ModuleA.PreProductionPage />} />
 
-          {/* Module B - Production Process */}
+          {/* Module B - Production Log */}
+          <Route path="production" element={<ModuleB.ProductionProcessPage />} />
           <Route path="production/:sessionId" element={<ModuleB.ProductionProcessPage />} />
 
           {/* Module C - Dryer Monitoring */}

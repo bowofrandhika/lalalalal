@@ -1,6 +1,8 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../hooks';
+import { useQuery } from '@tanstack/react-query';
+import { woNotificationService } from '../../services';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -22,7 +24,8 @@ import {
   Package,
   FileText,
   Database,
-  ScrollText
+  ScrollText,
+  Bell
 } from 'lucide-react';
 
 interface NavItem {
@@ -33,38 +36,60 @@ interface NavItem {
   children?: NavItem[];
 }
 
+// Role hierarchy for access control
+const ROLE_RANK: Record<string, number> = {
+  SUPER_USER: 6, ADMIN: 5, SPV: 4, MANDOR: 3, DRYER_OPERATOR: 2, PACKING_OPERATOR: 2
+};
+
 const navItems: NavItem[] = [
   { name: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-  { name: 'Work Orders', path: '/work-orders', icon: <ClipboardList className="w-5 h-5" />, roles: ['ADMIN', 'SPV'] },
-  { name: 'Daily Instructions', path: '/daily-instructions', icon: <CalendarDays className="w-5 h-5" /> },
-  { name: 'Packing & Traceability', path: '/packing-workflow', icon: <ScrollText className="w-5 h-5" /> },
+  {
+    name: 'Work Orders',
+    path: '/work-orders',
+    icon: <ClipboardList className="w-5 h-5" />,
+    roles: ['SUPER_USER', 'ADMIN', 'SPV']
+  },
+  {
+    name: 'Daily Instructions',
+    path: '/daily-instructions',
+    icon: <CalendarDays className="w-5 h-5" />,
+    roles: ['SUPER_USER', 'ADMIN', 'SPV', 'MANDOR']
+  },
   {
     name: 'Production',
     icon: <Factory className="w-5 h-5" />,
+    roles: ['SUPER_USER', 'ADMIN', 'SPV', 'MANDOR'],
     children: [
       { name: 'Pre-Production', path: '/pre-production', icon: <Settings className="w-4 h-4" /> },
-      { name: 'Production Process', path: '/production', icon: <Package className="w-4 h-4" /> },
+      { name: 'Production Log', path: '/production', icon: <Package className="w-4 h-4" /> },
       { name: 'Dryer Monitoring', path: '/dryer', icon: <Gauge className="w-4 h-4" /> },
-      { name: 'Packing (per session)', path: '/packing', icon: <Package className="w-4 h-4" /> }
+      { name: 'Packing (session)', path: '/packing', icon: <Package className="w-4 h-4" /> }
     ]
   },
   {
     name: 'Issues',
     icon: <AlertTriangle className="w-5 h-5" />,
+    roles: ['SUPER_USER', 'ADMIN', 'SPV', 'MANDOR'],
     children: [
       { name: 'Bottleneck', path: '/bottleneck', icon: <AlertTriangle className="w-4 h-4" /> },
       { name: 'Downtime', path: '/downtime', icon: <Clock className="w-4 h-4" /> }
     ]
   },
-  { name: 'OEE Dashboard', path: '/oee', icon: <BarChart3 className="w-5 h-5" /> },
-  { name: 'Traceability', path: '/traceability', icon: <PackageSearch className="w-5 h-5" /> },
-  { name: 'Maintenance', path: '/maintenance', icon: <Wrench className="w-5 h-5" /> },
-  { name: 'Quality', path: '/quality', icon: <ShieldCheck className="w-5 h-5" /> },
-  { name: 'Reports', path: '/reports', icon: <FileText className="w-5 h-5" /> },
+  {
+    name: 'Reports',
+    path: '/reports',
+    icon: <FileText className="w-5 h-5" />,
+    roles: ['SUPER_USER', 'ADMIN', 'SPV']
+  },
+  { name: 'OEE Dashboard', path: '/oee', icon: <BarChart3 className="w-5 h-5" />, roles: ['SUPER_USER', 'ADMIN', 'SPV'] },
+  { name: 'Traceability', path: '/traceability', icon: <PackageSearch className="w-5 h-5" />, roles: ['SUPER_USER', 'ADMIN'] },
+  { name: 'Maintenance', path: '/maintenance', icon: <Wrench className="w-5 h-5" />, roles: ['SUPER_USER', 'ADMIN', 'SPV'] },
+  { name: 'Quality', path: '/quality', icon: <ShieldCheck className="w-5 h-5" />, roles: ['SUPER_USER', 'ADMIN', 'SPV'] },
+  { name: 'Packing & Traceability', path: '/packing-workflow', icon: <ScrollText className="w-5 h-5" />, roles: ['SUPER_USER', 'ADMIN', 'SPV'] },
   {
     name: 'Admin',
     icon: <Settings className="w-5 h-5" />,
-    roles: ['ADMIN', 'SPV'],
+    roles: ['SUPER_USER', 'ADMIN'],
     children: [
       { name: 'Users', path: '/admin/users', icon: <Users className="w-4 h-4" /> },
       { name: 'Master Data', path: '/admin/master', icon: <Database className="w-4 h-4" /> },
@@ -73,12 +98,37 @@ const navItems: NavItem[] = [
   }
 ];
 
+const ROLE_LABELS: Record<string, string> = {
+  SUPER_USER: 'Super User',
+  ADMIN: 'Administrator',
+  SPV: 'Supervisor',
+  MANDOR: 'Foreman',
+  DRYER_OPERATOR: 'Dryer Operator',
+  PACKING_OPERATOR: 'Packing Operator',
+};
+
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, appUser, logout, hasRole } = useAuth();
+  const { appUser, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['Production']));
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  const userRole = appUser?.role || '';
+  const userRank = ROLE_RANK[userRole] || 0;
+
+  const canAccess = (roles?: string[]) => {
+    if (!roles || roles.length === 0) return true;
+    return roles.some(r => userRank >= (ROLE_RANK[r] || 0));
+  };
+
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['wo-notifications'],
+    queryFn: () => woNotificationService.getPending(),
+    refetchInterval: 30000,
+    enabled: userRank >= 5,
+  });
 
   const handleLogout = async () => {
     await logout();
@@ -94,10 +144,7 @@ export default function MainLayout() {
     });
   };
 
-  const filteredNavItems = navItems.filter(item => {
-    if (!item.roles) return true;
-    return item.roles.some(role => hasRole(role));
-  });
+  const filteredNavItems = navItems.filter(item => canAccess(item.roles));
 
   const isChildActive = (children: NavItem[]) =>
     children.some(c => c.path && location.pathname.startsWith(c.path));
@@ -129,11 +176,7 @@ export default function MainLayout() {
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-1 rounded-lg hover:bg-gray-100 flex-shrink-0"
           >
-            {sidebarOpen ? (
-              <X className="w-4 h-4 text-gray-500" />
-            ) : (
-              <Menu className="w-4 h-4 text-gray-500" />
-            )}
+            {sidebarOpen ? <X className="w-4 h-4 text-gray-500" /> : <Menu className="w-4 h-4 text-gray-500" />}
           </button>
         </div>
 
@@ -202,21 +245,72 @@ export default function MainLayout() {
           </ul>
         </nav>
 
-        {/* User Info */}
-        <div className="p-3 border-t border-gray-200 flex-shrink-0">
-          <div className="flex items-center space-x-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-green-700 font-semibold text-sm">
-                {appUser?.full_name?.charAt(0)?.toUpperCase() || 'U'}
-              </span>
+        {/* User Info + Logout */}
+        <div className="p-3 border-t border-gray-200 flex-shrink-0 space-y-2">
+          {/* Notification Bell (Super User / Admin only) */}
+          {userRank >= 5 && sidebarOpen && (
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifs(s => !s)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <Bell className="w-4 h-4 flex-shrink-0" />
+                <span>Notifications</span>
+                {notifications.length > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+              {showNotifs && notifications.length > 0 && (
+                <div className="absolute bottom-full left-0 mb-2 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50">
+                  <div className="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-600">
+                    WO Completion Alerts
+                  </div>
+                  {notifications.map(n => (
+                    <div
+                      key={n.id}
+                      className="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer"
+                      onClick={() => navigate('/work-orders')}
+                    >
+                      <p className="font-medium text-gray-900">
+                        {(n as any).work_orders?.wo_number}
+                      </p>
+                      <p className="text-gray-500">
+                        Reached {(n as any).work_orders?.qty_kg}kg target — confirm completion
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* User Avatar + Info */}
+          <div className="flex items-center space-x-3">
+            <div className="relative flex-shrink-0">
+              {appUser?.photo_url ? (
+                <img
+                  src={appUser.photo_url}
+                  alt={appUser.full_name}
+                  className="w-9 h-9 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center">
+                  <span className="text-green-700 font-semibold text-sm">
+                    {appUser?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                  </span>
+                </div>
+              )}
             </div>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{appUser?.full_name || 'User'}</p>
-                <p className="text-xs text-gray-500">{appUser?.role}</p>
+                <p className="text-xs text-gray-500">{ROLE_LABELS[userRole] || userRole}</p>
               </div>
             )}
           </div>
+
           <button
             onClick={handleLogout}
             className={`w-full flex items-center space-x-2 px-3 py-2 text-red-600 rounded-lg hover:bg-red-50 text-sm transition-colors ${

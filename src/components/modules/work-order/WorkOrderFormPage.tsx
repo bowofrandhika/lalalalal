@@ -1,288 +1,314 @@
-import { useEffect } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { workOrderSchema, type WorkOrderFormData } from '../../../schemas';
-import { useWorkOrder, useCreateWorkOrder, useUpdateWorkOrder, useBuyers, useProducts } from '../../../hooks';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Save, RefreshCw } from 'lucide-react';
+import { workOrderService } from '../../../services';
+import { useBuyers } from '../../../hooks';
+import type { WorkOrder, PackagingType } from '../../../types/database';
+
+const BUYERS = [
+  { code: 'BEL', name: 'Belshina' },
+  { code: 'KAM', name: 'Kamatyres' },
+  { code: 'SNI', name: 'SNI' },
+];
+
+const PACKAGING_OPTIONS: { value: PackagingType; label: string }[] = [
+  { value: 'SW', label: 'SW' },
+  { value: 'MB', label: 'MB' },
+  { value: 'LB', label: 'LB' },
+];
+
+const STATUS_OPTIONS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
+
+interface FormData {
+  wo_number: string;
+  wo_date: string;
+  buyer_id: string;
+  batch_code: string;
+  deadline: string;
+  packaging: PackagingType;
+  qty_kg: number;
+  status: string;
+  notes: string;
+}
+
+const today = new Date().toISOString().split('T')[0];
+const emptyForm: FormData = {
+  wo_number: '',
+  wo_date: today,
+  buyer_id: '',
+  batch_code: '',
+  deadline: '',
+  packaging: 'SW',
+  qty_kg: 0,
+  status: 'DRAFT',
+  notes: '',
+};
 
 export default function WorkOrderFormPage() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
-  const isEditing = searchParams.get('edit') === 'true';
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const isEditing = searchParams.get('edit') === 'true' && !!id;
 
-  const { data: workOrder } = useWorkOrder(id!);
-  const { data: buyers } = useBuyers();
-  const { data: products } = useProducts();
-  const createWorkOrder = useCreateWorkOrder();
-  const updateWorkOrder = useUpdateWorkOrder();
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [generatingWO, setGeneratingWO] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors, isSubmitting }
-  } = useForm<WorkOrderFormData>({
-    resolver: zodResolver(workOrderSchema)
+  const { data: wo } = useQuery({
+    queryKey: ['work_orders', id],
+    queryFn: () => workOrderService.getById(id!),
+    enabled: !!id && isEditing,
   });
 
+  const { data: buyers = [] } = useBuyers();
+
   useEffect(() => {
-    if (workOrder && isEditing) {
-      reset({
-        wo_number: workOrder.wo_number,
-        wo_date: workOrder.wo_date,
-        buyer_id: workOrder.buyer_id || '',
-        product_id: workOrder.product_id || '',
-        batch_code: workOrder.batch_code,
-        target_qty: workOrder.target_qty,
-        status: workOrder.status,
-        priority: workOrder.priority,
-        notes: workOrder.notes || '',
-        planned_start_date: workOrder.planned_start_date || '',
-        planned_end_date: workOrder.planned_end_date || ''
+    if (wo && isEditing) {
+      setForm({
+        wo_number: wo.wo_number || '',
+        wo_date: wo.wo_date || today,
+        buyer_id: wo.buyer_id || '',
+        batch_code: wo.batch_code || '',
+        deadline: wo.deadline || '',
+        packaging: wo.packaging || 'SW',
+        qty_kg: wo.qty_kg || 0,
+        status: wo.status || 'DRAFT',
+        notes: wo.notes || '',
       });
     }
-  }, [workOrder, isEditing, reset]);
+  }, [wo, isEditing]);
 
-  // Generate WO number for new work orders
-  useEffect(() => {
-    if (!id && !isEditing) {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const random = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
-      setValue('wo_number', `WO-${year}${month}-${random}`);
-      setValue('wo_date', today.toISOString().split('T')[0]);
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<WorkOrder>) => workOrderService.create(data as any),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['work_orders'] });
+      navigate(`/work-orders/${res.id}`);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Partial<WorkOrder>) => workOrderService.update(id!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['work_orders'] });
+      navigate(`/work-orders/${id}`);
+    },
+  });
+
+  async function generateWONumber() {
+    if (!form.deadline || !form.buyer_id) {
+      alert('Please select a Buyer and Deadline first.');
+      return;
     }
-  }, [id, isEditing, setValue]);
-
-  const onSubmit = async (data: WorkOrderFormData) => {
+    setGeneratingWO(true);
     try {
-      const submitData = {
-        ...data,
-        buyer_id: data.buyer_id || undefined,
-        product_id: data.product_id || undefined
-      };
-
-      if (id && isEditing) {
-        await updateWorkOrder.mutateAsync({ id, data: submitData });
-        navigate(`/work-orders/${id}`);
-      } else {
-        const result = await createWorkOrder.mutateAsync(submitData as WorkOrderFormData & { buyer_id?: string; product_id?: string });
-        navigate(`/work-orders/${result.id}`);
-      }
-    } catch (error) {
-      console.error('Error saving work order:', error);
+      const buyerObj = buyers.find(b => b.id === form.buyer_id);
+      const buyerCode = buyerObj?.buyer_code || buyerObj?.buyer_code_short || 'XXX';
+      const woNum = await workOrderService.generateWONumber(form.deadline, buyerCode);
+      setForm(f => ({ ...f, wo_number: woNum }));
+    } finally {
+      setGeneratingWO(false);
     }
-  };
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: Partial<WorkOrder> = {
+      wo_number: form.wo_number,
+      wo_date: form.wo_date,
+      buyer_id: form.buyer_id || undefined,
+      batch_code: form.batch_code,
+      deadline: form.deadline || undefined,
+      packaging: form.packaging,
+      qty_kg: form.qty_kg,
+      status: form.status as any,
+      notes: form.notes || undefined,
+      target_qty: form.qty_kg,
+    };
+    if (isEditing) {
+      await updateMutation.mutateAsync(payload);
+    } else {
+      await createMutation.mutateAsync(payload);
+    }
+  }
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-2xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
-        <button
-          onClick={() => navigate(-1)}
-          className="p-2 hover:bg-gray-100 rounded-lg"
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-500" />
-        </button>
+        <Link to="/work-orders" className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-gray-900">
             {isEditing ? 'Edit Work Order' : 'New Work Order'}
           </h1>
           <p className="text-gray-500 text-sm">
-            {isEditing ? 'Update work order details' : 'Create a new production work order'}
+            {isEditing ? `Editing ${wo?.wo_number}` : 'Create a new work order'}
           </p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-3xl">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                WO Number *
-              </label>
-              <input
-                {...register('wo_number')}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                  errors.wo_number ? 'border-red-500' : 'border-gray-300'
-                }`}
-              />
-              {errors.wo_number && (
-                <p className="mt-1 text-sm text-red-500">{errors.wo_number.message}</p>
-              )}
-            </div>
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        {/* Buyer (must be first for auto-number) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Buyer *</label>
+          <select
+            required
+            value={form.buyer_id}
+            onChange={e => {
+              setForm(f => ({ ...f, buyer_id: e.target.value, wo_number: '' }));
+            }}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="">Select Buyer</option>
+            {BUYERS.map(b => {
+              const found = buyers.find(bu => bu.buyer_code === b.code);
+              return (
+                <option key={b.code} value={found?.id || b.code}>
+                  {b.name}
+                </option>
+              );
+            })}
+          </select>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                WO Date *
-              </label>
-              <input
-                type="date"
-                {...register('wo_date')}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                  errors.wo_date ? 'border-red-500' : 'border-gray-300'
-                }`}
-              />
-              {errors.wo_date && (
-                <p className="mt-1 text-sm text-red-500">{errors.wo_date.message}</p>
-              )}
-            </div>
+        {/* Deadline */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Deadline *</label>
+          <input
+            required
+            type="date"
+            value={form.deadline}
+            onChange={e => setForm(f => ({ ...f, deadline: e.target.value, wo_number: '' }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Buyer
-              </label>
-              <select
-                {...register('buyer_id')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Buyer</option>
-                {buyers?.map((b) => (
-                  <option key={b.id} value={b.id}>{b.buyer_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Product
-              </label>
-              <select
-                {...register('product_id')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Product</option>
-                {products?.map((p) => (
-                  <option key={p.id} value={p.id}>{p.product_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Batch Code *
-              </label>
-              <input
-                {...register('batch_code')}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                  errors.batch_code ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="e.g., BATCH-2024-001"
-              />
-              {errors.batch_code && (
-                <p className="mt-1 text-sm text-red-500">{errors.batch_code.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Target Quantity *
-              </label>
-              <input
-                type="number"
-                {...register('target_qty', { valueAsNumber: true })}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                  errors.target_qty ? 'border-red-500' : 'border-gray-300'
-                }`}
-                min="0"
-              />
-              {errors.target_qty && (
-                <p className="mt-1 text-sm text-red-500">{errors.target_qty.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Priority (1-10)
-              </label>
-              <input
-                type="number"
-                {...register('priority', { valueAsNumber: true })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                min="1"
-                max="10"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                {...register('status')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="DRAFT">Draft</option>
-                <option value="ACTIVE">Active</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Planned Start Date
-              </label>
-              <input
-                type="date"
-                {...register('planned_start_date')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Planned End Date
-              </label>
-              <input
-                type="date"
-                {...register('planned_end_date')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes
-            </label>
-            <textarea
-              {...register('notes')}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="Add any notes or special instructions..."
+        {/* WO Number (auto-generated) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">WO Number *</label>
+          <div className="flex gap-2">
+            <input
+              required
+              value={form.wo_number}
+              onChange={e => setForm(f => ({ ...f, wo_number: e.target.value }))}
+              placeholder="e.g. PBS.WO.010726.BEL.0001"
+              className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
+              readOnly
             />
-          </div>
-
-          <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
             <button
               type="button"
-              onClick={() => navigate(-1)}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              onClick={generateWONumber}
+              disabled={generatingWO || !form.buyer_id || !form.deadline}
+              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Work Order
-                </>
-              )}
+              <RefreshCw className={`w-4 h-4 ${generatingWO ? 'animate-spin' : ''}`} />
+              Generate
             </button>
           </div>
+          <p className="text-xs text-gray-400 mt-1">Format: PBS.WO.DDMMYY.BUY.0001</p>
+        </div>
+
+        {/* WO Date */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">WO Date</label>
+          <input
+            type="date"
+            value={form.wo_date}
+            onChange={e => setForm(f => ({ ...f, wo_date: e.target.value }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+        </div>
+
+        {/* Packaging */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Packaging *</label>
+          <select
+            required
+            value={form.packaging}
+            onChange={e => setForm(f => ({ ...f, packaging: e.target.value as PackagingType }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            {PACKAGING_OPTIONS.map(p => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Quantity in KG */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (kg) *</label>
+          <input
+            required
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.qty_kg}
+            onChange={e => setForm(f => ({ ...f, qty_kg: parseFloat(e.target.value) || 0 }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            placeholder="0.00"
+          />
+        </div>
+
+        {/* Batch Code */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Batch Code</label>
+          <input
+            value={form.batch_code}
+            onChange={e => setForm(f => ({ ...f, batch_code: e.target.value }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            placeholder="Batch code"
+          />
+        </div>
+
+        {/* Status */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+          <select
+            value={form.status}
+            onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <textarea
+            value={form.notes}
+            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            rows={3}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+            placeholder="Optional notes..."
+          />
+        </div>
+
+        {(createMutation.error || updateMutation.error) && (
+          <p className="text-red-600 text-sm">
+            {String(createMutation.error || updateMutation.error)}
+          </p>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+          >
+            <Save className="w-4 h-4" />
+            {isSubmitting ? 'Saving...' : 'Save Work Order'}
+          </button>
         </div>
       </form>
     </div>

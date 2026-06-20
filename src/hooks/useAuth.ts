@@ -142,6 +142,7 @@ export const useAuth = () => {
     clearError: store.clearError,
     hasRole: (role: string) => {
       const roleHierarchy: Record<string, number> = {
+        'SUPER_USER': 6,
         'ADMIN': 5,
         'SPV': 4,
         'MANDOR': 3,

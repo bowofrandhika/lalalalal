@@ -1,6 +1,7 @@
 // Database Types - Generated from Supabase Schema
 
-export type UserRole = 'ADMIN' | 'SPV' | 'MANDOR' | 'DRYER_OPERATOR' | 'PACKING_OPERATOR';
+export type UserRole = 'SUPER_USER' | 'ADMIN' | 'SPV' | 'MANDOR' | 'DRYER_OPERATOR' | 'PACKING_OPERATOR';
+export type PackagingType = 'SW' | 'MB' | 'LB';
 export type ShiftType = 'MORNING' | 'AFTERNOON' | 'NIGHT';
 export type ProductionStatus = 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 
@@ -15,6 +16,7 @@ export interface AppUser {
   department?: string;
   phone?: string;
   is_active: boolean;
+  photo_url?: string;
   created_at: string;
   updated_at: string;
   created_by?: string;
@@ -38,6 +40,7 @@ export interface Buyer {
   id: string;
   buyer_code: string;
   buyer_name: string;
+  buyer_code_short?: string;
   address?: string;
   contact_person?: string;
   contact_phone?: string;
@@ -90,6 +93,9 @@ export interface WorkOrder {
   batch_code: string;
   target_qty: number;
   completed_qty: number;
+  qty_kg: number;
+  deadline?: string;
+  packaging?: PackagingType;
   status: ProductionStatus;
   priority?: number;
   notes?: string;
@@ -97,6 +103,9 @@ export interface WorkOrder {
   planned_end_date?: string;
   actual_start_date?: string;
   actual_end_date?: string;
+  completion_notified_at?: string;
+  completion_confirmed_at?: string;
+  completion_confirmed_by?: string;
   created_at: string;
   updated_at: string;
   created_by?: string;
@@ -109,17 +118,93 @@ export interface ProductionSession {
   work_order_id?: string;
   session_date: string;
   shift_id?: string;
+  shift_label?: string;
   line_id?: string;
+  line_label?: string;
   buyer_id?: string;
   batch?: string;
   target_production: number;
   actual_production: number;
+  target_kg: number;
+  completed_kg: number;
+  foreman_id?: string;
+  start_time?: string;
+  end_time?: string;
   status: ProductionStatus;
   notes?: string;
   created_at: string;
   updated_at: string;
   created_by?: string;
   updated_by?: string;
+}
+
+export interface PreProductionChecklistItemV2 {
+  id: string;
+  session_id: string;
+  item_name: string;
+  initial_condition?: 'OK' | 'NG';
+  final_condition?: 'OK' | 'NG';
+  remarks?: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductionLogSession {
+  id: string;
+  session_id: string;
+  foreman_id?: string;
+  start_time?: string;
+  end_time?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductionMaterialId {
+  id: string;
+  session_id: string;
+  room?: string;
+  deck?: string;
+  update_date?: string;
+  visual_condition?: 'Clean' | 'Moderate' | 'Dirty';
+  line_cleaning?: 'Clean' | 'Moderate' | 'Dirty';
+  remarks?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductionProcessFlow {
+  id: string;
+  session_id: string;
+  avg_cake_weight?: number;
+  variation?: string;
+  press_remarks?: string;
+  bale_qty: number;
+  pallet_qty: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductionFuel {
+  id: string;
+  session_id: string;
+  diesel_start: number;
+  diesel_end: number;
+  pks_consumption: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WoCompletionNotification {
+  id: string;
+  work_order_id: string;
+  session_id?: string;
+  total_kg?: number;
+  notified_at: string;
+  confirmed_at?: string;
+  confirmed_by?: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 // Module A Types
