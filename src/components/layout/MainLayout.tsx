@@ -112,13 +112,15 @@ export default function MainLayout() {
       >
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 flex-shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
-              <Factory className="w-5 h-5 text-white" />
-            </div>
+          <div className="flex items-center space-x-2">
+            <img
+              src="/LOGO_PBS.png"
+              alt="PBS Logo"
+              className="w-9 h-9 flex-shrink-0 object-contain"
+            />
             {sidebarOpen && (
               <div>
-                <span className="text-sm font-bold text-gray-900 block leading-tight">SIR 20 MES</span>
+                <span className="text-sm font-bold text-gray-900 block leading-tight">POTENSI BUMI SAKTI</span>
                 <span className="text-xs text-gray-500">Production System</span>
               </div>
             )}

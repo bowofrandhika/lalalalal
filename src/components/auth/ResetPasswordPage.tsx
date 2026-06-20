@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema, type ResetPasswordFormData } from '../../schemas';
 import { useAuth } from '../../hooks';
-import { Factory, Mail, ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
+import { Mail, ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const { resetPassword, isLoading, error, clearError } = useAuth();
@@ -59,8 +59,12 @@ export default function ResetPasswordPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
-              <Factory className="w-8 h-8 text-blue-600" />
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <img src="/LOGO_PBS.png" alt="PBS Logo" className="w-12 h-12 object-contain" />
+              <div className="text-left">
+                <p className="text-base font-bold text-gray-900 leading-tight">POTENSI BUMI SAKTI</p>
+                <p className="text-xs text-gray-500">Production Management System</p>
+              </div>
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
             <p className="text-gray-500 mt-2">

@@ -6,5 +6,6 @@ export * from './module-a.service';
 export * from './module-b.service';
 export * from './module-c.service';
 export * from './module-d.service';
+export * as moduleDService from './module-d.service';
 export * from './module-e-f.service';
 export * from './mes.service';
