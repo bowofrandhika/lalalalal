@@ -35,10 +35,10 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-3">
-              <img src="/LOGO_PBS.png" alt="PBS Logo" className="w-14 h-14 object-contain" />
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <img src="/LOGO_PBS.png" alt="PBS Logo" className="w-20 h-20 object-contain" />
               <div className="text-left">
-                <p className="text-base font-bold text-gray-900 leading-tight">POTENSI BUMI SAKTI</p>
+                <p className="text-lg font-bold text-blue-700 leading-tight tracking-wide">POTENSI BUMI SAKTI</p>
                 <p className="text-xs text-gray-500">Production Management System</p>
               </div>
             </div>

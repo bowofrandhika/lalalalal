@@ -97,9 +97,9 @@ export default function SignupPage() {
           {/* Header */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center gap-3 mb-3">
-              <img src="/LOGO_PBS.png" alt="PBS Logo" className="w-12 h-12 object-contain" />
+              <img src="/LOGO_PBS.png" alt="PBS Logo" className="w-16 h-16 object-contain" />
               <div className="text-left">
-                <p className="text-base font-bold text-gray-900 leading-tight">POTENSI BUMI SAKTI</p>
+                <p className="text-base font-bold text-blue-700 leading-tight tracking-wide">POTENSI BUMI SAKTI</p>
                 <p className="text-xs text-gray-500">Production Management System</p>
               </div>
             </div>

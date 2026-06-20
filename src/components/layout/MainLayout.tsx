@@ -163,11 +163,11 @@ export default function MainLayout() {
             <img
               src="/LOGO_PBS.png"
               alt="PBS Logo"
-              className="w-9 h-9 flex-shrink-0 object-contain"
+              className="w-11 h-11 flex-shrink-0 object-contain"
             />
             {sidebarOpen && (
               <div>
-                <span className="text-sm font-bold text-gray-900 block leading-tight">POTENSI BUMI SAKTI</span>
+                <span className="text-sm font-bold text-blue-700 block leading-tight tracking-wide">POTENSI BUMI SAKTI</span>
                 <span className="text-xs text-gray-500">Production System</span>
               </div>
             )}
